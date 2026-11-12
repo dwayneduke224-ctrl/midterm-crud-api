@@ -1,16 +1,19 @@
 
 import {
-   Entity,
-   PrimaryGeneratedColumn,
-   Column,
-   CreateDateColumn,
-   UpdateDateColumn,
-   ManyToOne,
-   JoinColumn,
-   Index
+    Entity,
+    PrimaryGeneratedColumn,
+    Column,
+    CreateDateColumn,
+    UpdateDateColumn,
+    ManyToOne,
+    ManyToMany,
+    JoinColumn,
+    JoinTable,
+    Index
 } from 'typeorm';
 import { User } from './User';
-
+import { Category } from './Category';
+import { Tag } from './Tag';
 
 @Entity('tasks')
 @Index(['userId'])
@@ -45,16 +48,44 @@ export class Task {
 
    @Column({ type: 'date', nullable: true })
    dueDate: Date | null = null;
+   
+get isOverdue(): boolean {
+    if (!this.dueDate) {
+        return false;
+    }
 
+    return this.dueDate < new Date() && this.status !== 'completed';
+}
+
+toJSON() {
+    return {
+        ...this,
+        isOverdue: this.isOverdue
+    };
+}
 
    // Many-to-One Relationship: Many tasks belong to one user
-   @ManyToOne(() => User, user => user.tasks, { onDelete: 'CASCADE' })
-   @JoinColumn({ name: 'userId' })
-   user!: User;
+@ManyToOne(() => User, user => user.tasks, { onDelete: 'SET NULL', nullable: true })
+@JoinColumn({ name: 'userId' })
+user!: User;
+
+@Column({ type: 'int', nullable: true })
+userId!: number | null;
+   @ManyToOne(() => Category, category => category.tasks, { nullable: true })
+@JoinColumn({ name: 'categoryId' })
+category!: Category;
+
+@Column({ type: 'int', nullable: true })
+categoryId!: number | null;
 
 
-   @Column({ type: 'int' })
-   userId!: number;
+// Many-to-Many Relationship: Tasks can have multiple tags
+@ManyToMany(() => Tag, tag => tag.tasks)
+@JoinTable()
+tags!: Tag[];
+
+@Column({ type: 'boolean', default: false })
+isDeleted!: boolean;
 
 
    @CreateDateColumn()

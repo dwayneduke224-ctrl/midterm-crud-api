@@ -9,6 +9,8 @@ export const userRoutes = Router();
 // GET /api/users
 userRoutes.get('/', UserController.getAll);
 
+userRoutes.post('/with-initial-task', UserController.createUserWithInitialTask);
+
 
 // GET /api/users/:id
 userRoutes.get('/:id', UserController.getById);
@@ -24,3 +26,4 @@ userRoutes.put('/:id', UserController.update);
 
 // DELETE /api/users/:id
 userRoutes.delete('/:id', UserController.delete);
+

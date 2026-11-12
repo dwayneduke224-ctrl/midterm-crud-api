@@ -1,7 +1,11 @@
 
 import { Request, Response } from 'express';
+import bcrypt from 'bcrypt';
 import { AppDataSource } from '../config/data-source';
 import { User } from '../entities/User';
+import { Task } from '../entities/Task';
+import { CreateUserDto } from '../dto/CreateUserDto';
+import { UpdateUserDto } from '../dto/UpdateUserDto';
 
 
 const userRepository = AppDataSource.getRepository(User);
@@ -102,7 +106,7 @@ export class UserController {
    // POST /api/users - Create a new user
    static async create(req: Request, res: Response) {
        try {
-           const { name, email, password } = req.body;
+          const { name, email, password, phoneNumber }: CreateUserDto = req.body;
 
 
            // Validation
@@ -115,6 +119,21 @@ export class UserController {
                    }
                });
            }
+
+           // Validate phone number if provided
+if (phoneNumber !== undefined && phoneNumber !== null && phoneNumber !== '') {
+    const phoneRegex = /^09\d{9}$/;
+
+    if (!phoneRegex.test(phoneNumber)) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: 'INVALID_PHONE',
+                message: 'Phone number must be a valid Philippine mobile number (e.g. 09171234567)'
+            }
+        });
+    }
+}
 
 
            // Check if email already exists
@@ -131,13 +150,14 @@ export class UserController {
 
 
            // Create new user
-           const user = userRepository.create({
-               name,
-               email,
-               password  // In a real app, you would hash this with bcrypt!
-           });
+const hashedPassword = await bcrypt.hash(password, 10);
 
-
+const user = userRepository.create({
+    name,
+    email,
+    password: hashedPassword,
+    phoneNumber
+});
            const savedUser = await userRepository.save(user);
 
 
@@ -193,8 +213,7 @@ export class UserController {
            }
 
 
-           const { name, email, isActive } = req.body;
-
+const { name, email, phoneNumber, isActive }: UpdateUserDto = req.body;
 
            // Check if email is being changed and already exists
            if (email && email !== user.email) {
@@ -289,4 +308,104 @@ export class UserController {
            });
        }
    }
+
+   static async createUserWithInitialTask(req: Request, res: Response) {
+    try {
+        const {
+            name,
+            email,
+            password,
+            phoneNumber,
+            taskTitle,
+            taskDescription,
+            taskStatus,
+            taskPriority,
+            dueDate
+        } = req.body;
+
+        if (!name || !email || !password || !taskTitle) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'MISSING_FIELDS',
+                    message: 'Name, email, password, and taskTitle are required'
+                }
+            });
+        }
+
+        const result = await AppDataSource.transaction(async (transactionalEntityManager) => {
+            // Check if user already exists
+            const existingUser = await transactionalEntityManager.findOne(User, {
+                where: { email }
+            });
+
+            if (existingUser) {
+                throw new Error('EMAIL_ALREADY_EXISTS');
+            }
+
+            // Hash password
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            // Create User
+            const user = transactionalEntityManager.create(User, {
+                name,
+                email,
+                password: hashedPassword,
+                phoneNumber
+            });
+
+            const savedUser = await transactionalEntityManager.save(User, user);
+
+            // Create initial Task
+            const task = transactionalEntityManager.create(Task, {
+                title: taskTitle,
+                description: taskDescription || null,
+                status: taskStatus || 'pending',
+                priority: taskPriority || 'medium',
+                dueDate: dueDate || null,
+                userId: savedUser.id,
+                isDeleted: false
+            });
+
+            const savedTask = await transactionalEntityManager.save(Task, task);
+
+            return {
+                user: savedUser,
+                task: savedTask
+            };
+        });
+
+        const { password: _, ...userWithoutPassword } = result.user;
+
+        return res.status(201).json({
+            success: true,
+            message: 'User and initial task created successfully',
+            data: {
+                user: userWithoutPassword,
+                task: result.task
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating user with initial task:', error);
+
+        if (error instanceof Error && error.message === 'EMAIL_ALREADY_EXISTS') {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'EMAIL_ALREADY_EXISTS',
+                    message: 'A user with this email already exists'
+                }
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: {
+                code: 'TRANSACTION_FAILED',
+                message: 'Failed to create user and initial task'
+            }
+        });
+    }
+}
 }

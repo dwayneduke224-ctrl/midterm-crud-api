@@ -61,3 +61,303 @@ This helps prevent TypeScript errors when working with the entities.
 9.Explicitly defining column types helps me know exactly what kind of data each field can store. For example, I can use varchar for names and emails and text for longer descriptions. It also makes the database structure clearer and helps avoid errors when TypeORM creates or updates tables. This makes the code easier to understand and maintain.
 
 10.In raw SQL, foreign keys are used to connect tables and make sure that related records are valid. In TypeORM, I can define these relationships directly in my TypeScript entities using decorators like @OneToMany and @ManyToOne.
+
+PHASE 3 : 
+# 7.1 API Documentation
+
+## API Versioning
+
+All API endpoints are now available under the `/api/v1` prefix.
+
+Example:
+
+```text
+GET /api/v1/users
+```
+
+Old `/api` endpoints return **410 Gone** and indicate that the endpoint has moved to `/api/v1`.
+
+---
+
+## New API Endpoints
+
+### Authentication
+
+```text
+POST /api/v1/auth/login
+```
+
+Used to log in a user using their email and password.
+
+### User With Initial Task
+
+```text
+POST /api/v1/users/with-initial-task
+```
+
+Creates a user and their first task at the same time using a TypeORM transaction.
+
+If the task creation fails, the user creation is rolled back.
+
+### Overdue Tasks
+
+```text
+GET /api/v1/overdue
+```
+
+Returns tasks where the due date is in the past and the task status is not `completed`.
+
+### User Task Statistics
+
+```text
+GET /api/v1/users/:userId/stats
+```
+
+Returns the total, completed, and pending tasks for a user.
+
+### User Tasks
+
+```text
+GET /api/v1/users/:userId/tasks
+POST /api/v1/users/:userId/tasks
+```
+
+These endpoints support task creation, filtering, pagination, and sorting.
+
+### Delete Task
+
+```text
+DELETE /api/v1/tasks/:id
+```
+
+Uses soft deletion by setting `isDeleted` to `true` instead of permanently removing the task.
+
+---
+
+## Task Filtering, Pagination, and Sorting
+
+Tasks can be filtered by:
+
+```text
+status
+priority
+```
+
+Example:
+
+```text
+GET /api/v1/users/6/tasks?status=pending&priority=high
+```
+
+Pagination is supported using:
+
+```text
+page
+limit
+```
+
+Example:
+
+```text
+GET /api/v1/users/6/tasks?page=1&limit=10
+```
+
+Sorting is supported using:
+
+```text
+sortBy
+order
+```
+
+Example:
+
+```text
+GET /api/v1/users/6/tasks?sortBy=title&order=ASC
+```
+
+---
+
+## Database Schema
+
+### User
+
+The `users` table contains:
+
+```text
+id
+name
+email
+phoneNumber
+password
+isActive
+createdAt
+updatedAt
+```
+
+### Task
+
+The `tasks` table contains:
+
+```text
+id
+title
+description
+status
+priority
+dueDate
+userId
+categoryId
+isDeleted
+createdAt
+updatedAt
+```
+
+### Category
+
+The `categories` table contains:
+
+```text
+id
+name
+```
+
+### Tag
+
+The `tags` table contains:
+
+```text
+id
+name
+```
+
+---
+
+## Database Relationships
+
+### User and Task
+
+One user can have many tasks.
+
+```text
+User 1 ──────── * Task
+```
+
+A task belongs to one user.
+
+If a user is deleted, the task's `userId` is set to `NULL`.
+
+### Category and Task
+
+One category can have many tasks.
+
+```text
+Category 1 ──────── * Task
+```
+
+A task can belong to one category.
+
+### Task and Tag
+
+Tasks and tags have a Many-to-Many relationship.
+
+```text
+Task * ──────── * Tag
+```
+
+A task can have multiple tags, and a tag can belong to multiple tasks.
+
+TypeORM uses a junction table to connect the tasks and tags.
+
+---
+
+## Computed Task Property
+
+The Task entity has an `isOverdue` computed property.
+
+It returns `true` when:
+
+```text
+dueDate is in the past
+AND
+status is not completed
+```
+
+Example:
+
+```json
+{
+    "title": "Finish project",
+    "status": "pending",
+    "isOverdue": true
+}
+```
+
+---
+
+## Custom Task Repository
+
+A custom Task repository includes:
+
+```text
+findOverdueTasks()
+```
+
+This method finds tasks where the due date is before today and the status is not `completed`.
+
+---
+
+## DTOs
+
+The project uses DTOs for request body typing.
+
+DTOs are located in:
+
+```text
+src/dto/
+```
+
+The project includes:
+
+```text
+CreateUserDto
+UpdateUserDto
+CreateTaskDto
+```
+
+---
+
+## Database Seeder
+
+The project includes a seed script that creates:
+
+- 5 dummy users
+- 15 dummy tasks
+
+Run the seeder with:
+
+```bash
+npm run seed
+```
+
+The seed script checks for existing users and tasks before inserting them, helping prevent duplicate data.
+
+---
+
+## Other Implemented Features
+
+The API also includes:
+
+- Password hashing using bcrypt
+- Password exclusion from API responses
+- Input sanitization for task title and description
+- Request logging middleware
+- Database transactions
+- Custom Task repository
+- Soft delete
+- Pagination
+- Sorting
+- Filtering
+- API versioning
+- Graceful shutdown
+- Environment-specific database configuration
+- TypeORM migrations

@@ -4,6 +4,8 @@ import cors from 'cors';
 import { AppDataSource } from './config/data-source';
 import { userRoutes } from './routes/userRoutes';
 import { taskRoutes } from './routes/taskRoutes';
+import { authRoutes } from './routes/authRoutes';
+import { requestLogger } from './middleware/requestLogger';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -14,6 +16,7 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 app.use((req, res, next) => {
     console.log(`📥 Incoming request: ${req.method} ${req.url}`);
     next();
@@ -30,8 +33,26 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
-app.use('/api/users', userRoutes);
-app.use('/api', taskRoutes);
+// API v1 Routes
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1', taskRoutes);
+app.use('/api/v1/auth', authRoutes);
+
+// Old API routes are permanently moved to /api/v1
+app.use('/api', (req, res, next) => {
+    // Allow /api/v1 routes to continue to the normal 404 handler
+    if (req.path.startsWith('/v1')) {
+        return next();
+    }
+
+    return res.status(410).json({
+        success: false,
+        error: {
+            code: 'API_VERSION_MOVED',
+            message: 'This API endpoint has moved to /api/v1'
+        }
+    });
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -46,10 +67,32 @@ app.use((req, res) => {
 });
 
 // Start server immediately so health checks and routes work right away
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
+const gracefulShutdown = async (signal: string) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+
+    server.close(async () => {
+        console.log('Express server closed.');
+
+        try {
+            if (AppDataSource.isInitialized) {
+                await AppDataSource.destroy();
+                console.log('Database connection closed.');
+            }
+
+            process.exit(0);
+        } catch (error) {
+            console.error('Error during shutdown:', error);
+            process.exit(1);
+        }
+    });
+};
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // Initialize database connection in the background
 AppDataSource.initialize()
    .then(() => {
